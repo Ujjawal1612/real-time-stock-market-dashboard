@@ -3,53 +3,93 @@ import plotly.graph_objects as go
 
 from app.market import calculate_indicators, fetch_history, latest_snapshot
 
+st.set_page_config(page_title="StockSense", page_icon="📈", layout="wide")
 
-st.set_page_config(page_title="StockSense Dashboard", page_icon="📈", layout="wide")
-st.title("📈 StockSense — Real-Time Stock Market Dashboard")
-st.caption("Market-data dashboard for analysis and decision support; not investment advice.")
+st.title("📈 StockSense")
+st.write("Simple stock market dashboard for checking price history and technical indicators.")
+st.caption("For learning and analysis only. This is not investment advice.")
 
-symbol = st.sidebar.text_input("Stock symbol", "AAPL").strip().upper()
-period = st.sidebar.selectbox("History", ["5d", "1mo", "3mo", "6mo", "1y", "2y"], index=1)
-interval = st.sidebar.selectbox("Interval", ["1d", "1h", "30m", "15m", "5m"], index=0)
+symbol = st.sidebar.text_input("Enter stock symbol", "AAPL").upper().strip()
+period = st.sidebar.selectbox(
+    "Select time period", ["5d", "1mo", "3mo", "6mo", "1y", "2y"]
+)
+interval = st.sidebar.selectbox(
+    "Select interval", ["1d", "1h", "30m", "15m", "5m"]
+)
 
-if st.sidebar.button("Refresh"):
-    st.cache_data.clear()
+if st.sidebar.button("Refresh data"):
+    st.rerun()
+
+if not symbol:
+    st.warning("Please enter a stock symbol.")
+    st.stop()
 
 try:
-    df = calculate_indicators(fetch_history(symbol, period, interval))
-    snap = latest_snapshot(df)
+    data = fetch_history(symbol, period, interval)
+    data = calculate_indicators(data)
+    latest = latest_snapshot(data)
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Price", f"{snap['price']:.2f}", f"{snap['change']:.2f} ({snap['change_pct']:.2f}%)")
-    c2.metric("Volume", f"{snap['volume']:,}")
-    c3.metric(
-        "RSI (14)",
-        f"{df['rsi_14'].dropna().iloc[-1]:.2f}" if df["rsi_14"].notna().any() else "N/A",
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Current price", f"{latest['price']:.2f}")
+    col2.metric(
+        "Change",
+        f"{latest['change']:.2f}",
+        f"{latest['change_pct']:.2f}%",
     )
+    col3.metric("Volume", f"{latest['volume']:,}")
 
-    fig = go.Figure(
-        data=[
-            go.Candlestick(
-                x=df.iloc[:, 0],
-                open=df["open"],
-                high=df["high"],
-                low=df["low"],
-                close=df["close"],
-            )
-        ]
+    st.subheader(f"{symbol} price chart")
+
+    price_chart = go.Figure()
+    price_chart.add_trace(
+        go.Candlestick(
+            x=data.iloc[:, 0],
+            open=data["open"],
+            high=data["high"],
+            low=data["low"],
+            close=data["close"],
+            name=symbol,
+        )
     )
-    fig.update_layout(title=f"{symbol} Price", xaxis_rangeslider_visible=False, height=550)
-    st.plotly_chart(fig, use_container_width=True)
+    price_chart.update_layout(xaxis_rangeslider_visible=False, height=500)
+    st.plotly_chart(price_chart, use_container_width=True)
 
-    st.subheader("Trend indicators")
-    trend = go.Figure()
-    trend.add_trace(go.Scatter(x=df.iloc[:, 0], y=df["close"], name="Close"))
-    trend.add_trace(go.Scatter(x=df.iloc[:, 0], y=df["sma_20"], name="SMA 20"))
-    trend.add_trace(go.Scatter(x=df.iloc[:, 0], y=df["sma_50"], name="SMA 50"))
-    trend.update_layout(height=400)
-    st.plotly_chart(trend, use_container_width=True)
+    st.subheader("Moving averages")
 
-    st.subheader("Latest data")
-    st.dataframe(df.tail(20), use_container_width=True)
-except Exception as exc:
-    st.error(f"Unable to load {symbol}: {exc}")
+    trend_chart = go.Figure()
+    trend_chart.add_trace(
+        go.Scatter(x=data.iloc[:, 0], y=data["close"], name="Close")
+    )
+    trend_chart.add_trace(
+        go.Scatter(x=data.iloc[:, 0], y=data["sma_20"], name="SMA 20")
+    )
+    trend_chart.add_trace(
+        go.Scatter(x=data.iloc[:, 0], y=data["sma_50"], name="SMA 50")
+    )
+    trend_chart.update_layout(height=400)
+    st.plotly_chart(trend_chart, use_container_width=True)
+
+    st.subheader("RSI and MACD")
+
+    rsi = data.dropna(subset=["rsi_14"])
+    if not rsi.empty:
+        rsi_chart = go.Figure()
+        rsi_chart.add_trace(go.Scatter(x=rsi.iloc[:, 0], y=rsi["rsi_14"], name="RSI"))
+        rsi_chart.add_hline(y=70, line_dash="dash")
+        rsi_chart.add_hline(y=30, line_dash="dash")
+        rsi_chart.update_layout(height=300)
+        st.plotly_chart(rsi_chart, use_container_width=True)
+
+    macd_chart = go.Figure()
+    macd_chart.add_trace(go.Scatter(x=data.iloc[:, 0], y=data["macd"], name="MACD"))
+    macd_chart.add_trace(
+        go.Scatter(x=data.iloc[:, 0], y=data["macd_signal"], name="Signal")
+    )
+    macd_chart.update_layout(height=300)
+    st.plotly_chart(macd_chart, use_container_width=True)
+
+    st.subheader("Recent data")
+    st.dataframe(data.tail(20), use_container_width=True)
+
+except Exception as e:
+    st.error(f"Could not load data for {symbol}: {e}")
