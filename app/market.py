@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import pandas as pd
-import yfinance as yf
 
 
 def fetch_history(symbol: str, period: str = "1mo", interval: str = "1d") -> pd.DataFrame:
     symbol = symbol.strip().upper()
     if not symbol:
         raise ValueError("Stock symbol cannot be empty")
+
+    # Imported lazily so the offline analysis functions remain usable without yfinance.
+    import yfinance as yf
 
     df = yf.download(symbol, period=period, interval=interval, auto_adjust=False, progress=False)
     if df.empty:
